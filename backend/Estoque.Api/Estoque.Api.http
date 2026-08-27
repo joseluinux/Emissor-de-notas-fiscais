@@ -1,6 +1,76 @@
-@Estoque.Api_HostAddress = http://localhost:5004
+@Estoque = http://localhost:5001
 
-GET {{Estoque.Api_HostAddress}}/weatherforecast/
+# Estoque (Stock) — :5001
+# Rode com: dotnet run --project backend/Estoque.Api
+# O fluxo entre os dois servicos esta em Faturamento.Api.http.
+
+### 1. Cadastrar produto — 201
+POST {{Estoque}}/api/produtos
+Content-Type: application/json
+
+{ "codigo": "P001", "descricao": "Teclado", "saldo": 10 }
+
+### 2. Codigo repetido — 409 "Codigo ja cadastrado"
+POST {{Estoque}}/api/produtos
+Content-Type: application/json
+
+{ "codigo": "P001", "descricao": "Outro", "saldo": 5 }
+
+### 3. Saldo negativo — 400 com erro de validacao
+POST {{Estoque}}/api/produtos
+Content-Type: application/json
+
+{ "codigo": "P002", "descricao": "Mouse", "saldo": -1 }
+
+### 4. Listar produtos — 200, ordenado por codigo
+GET {{Estoque}}/api/produtos
 Accept: application/json
 
-###
+### 5. Obter por id — 200 (404 se nao existir)
+GET {{Estoque}}/api/produtos/1
+Accept: application/json
+
+### 6. Atualizar cadastro — 200
+PUT {{Estoque}}/api/produtos/1
+Content-Type: application/json
+
+{ "descricao": "Teclado mecanico", "saldo": 10 }
+
+# ─── Baixa de estoque: o endpoint que o Faturamento chama ───
+
+### 7. Baixa de 2 unidades — 201, saldoResultante 8
+POST {{Estoque}}/api/estoque/movimentacoes
+Content-Type: application/json
+
+{ "referencia": "manual-1", "itens": [ { "produtoCodigo": "P001", "quantidade": 2 } ] }
+
+### 8. IDEMPOTENCIA: mesma referencia — 200, corpo identico, nada debitado
+POST {{Estoque}}/api/estoque/movimentacoes
+Content-Type: application/json
+
+{ "referencia": "manual-1", "itens": [ { "produtoCodigo": "P001", "quantidade": 2 } ] }
+
+### 9. Confirme no passo 4: o saldo continua 8, nao 6
+GET {{Estoque}}/api/produtos
+Accept: application/json
+
+### 10. Saldo insuficiente — 422 listando todas as faltas de uma vez
+POST {{Estoque}}/api/estoque/movimentacoes
+Content-Type: application/json
+
+{ "referencia": "manual-2", "itens": [ { "produtoCodigo": "P001", "quantidade": 999 } ] }
+
+### 11. Produto inexistente — 422 nomeando o codigo
+POST {{Estoque}}/api/estoque/movimentacoes
+Content-Type: application/json
+
+{ "referencia": "manual-3", "itens": [ { "produtoCodigo": "NAO-EXISTE", "quantidade": 1 } ] }
+
+### 12. Trilha de auditoria de uma movimentacao — 200
+GET {{Estoque}}/api/estoque/movimentacoes/manual-1
+Accept: application/json
+
+### 13. A nota impressa em Faturamento.Api.http aparece aqui como "nota-1".
+#     404 se voce ainda nao rodou aquele arquivo — a referencia so existe depois da impressao.
+GET {{Estoque}}/api/estoque/movimentacoes/nota-1
+Accept: application/json

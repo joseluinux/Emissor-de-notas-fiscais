@@ -1,6 +1,74 @@
-@Faturamento.Api_HostAddress = http://localhost:5154
+@Faturamento = http://localhost:5002
+@Estoque = http://localhost:5001
 
-GET {{Faturamento.Api_HostAddress}}/weatherforecast/
+# Faturamento (Billing) — :5002
+# Este arquivo e o roteiro da demo: a impressao atravessa :5002 -> :5001, fecha a nota
+# e debita o estoque na mesma operacao.
+#
+# Suba os DOIS servicos antes:
+#   dotnet run --project backend/Estoque.Api
+#   dotnet run --project backend/Faturamento.Api
+#
+# Comece com o banco limpo para que os ids batam com os comentarios abaixo.
+
+### 1. [Estoque] Produto P001 com saldo 10
+POST {{Estoque}}/api/produtos
+Content-Type: application/json
+
+{ "codigo": "P001", "descricao": "Teclado", "saldo": 10 }
+
+### 2. Criar nota usando 2 unidades — 201, status Aberta, Numero da sequence
+POST {{Faturamento}}/api/notas
+Content-Type: application/json
+
+{ "itens": [ { "produtoCodigo": "P001", "descricao": "Teclado", "quantidade": 2 } ] }
+
+### 3. Listar notas — 200, com os itens, em ordem de numeracao
+GET {{Faturamento}}/api/notas
 Accept: application/json
 
-###
+### 4. IMPRIMIR — 200. Aqui a chamada cruza para o Estoque.
+#    A nota vira Fechada e ganha ImpressaEm; o saldo cai de 10 para 8.
+POST {{Faturamento}}/api/notas/1/imprimir
+
+### 5. [Estoque] Confirme o exemplo do brief: saldo 10 - 2 = 8
+GET {{Estoque}}/api/produtos
+Accept: application/json
+
+### 6. Imprimir de novo — 409. So notas Abertas podem ser impressas.
+#    Confirme no passo 5 que o saldo NAO se moveu de novo.
+POST {{Faturamento}}/api/notas/1/imprimir
+
+### 7. Nota inexistente — 404
+POST {{Faturamento}}/api/notas/999/imprimir
+
+# ─── Saldo insuficiente: a recusa nasce no Estoque e atravessa intacta ───
+
+### 8. Nota pedindo 999 unidades — 201, ainda Aberta
+POST {{Faturamento}}/api/notas
+Content-Type: application/json
+
+{ "itens": [ { "produtoCodigo": "P001", "descricao": "Teclado", "quantidade": 999 } ] }
+
+### 9. Imprimir — 422 com o detail do Estoque: "Saldo insuficiente para P001 (disponivel 8...)"
+#    A nota continua Aberta e nada foi debitado.
+POST {{Faturamento}}/api/notas/2/imprimir
+
+### 10. Confirme: status Aberta, impressaEm null
+GET {{Faturamento}}/api/notas/2
+Accept: application/json
+
+### 11. Produto que nao existe no Estoque — 422 nomeando o codigo
+POST {{Faturamento}}/api/notas
+Content-Type: application/json
+
+{ "itens": [ { "produtoCodigo": "NAO-EXISTE", "descricao": "Fantasma", "quantidade": 1 } ] }
+
+### 12. Imprimir a nota 3 — 422 "Produto(s) nao cadastrado(s): NAO-EXISTE."
+POST {{Faturamento}}/api/notas/3/imprimir
+
+# ─── Ainda nao implementado ───
+#
+# Se o Estoque estiver parado, o passo 4 responde 500 com correlationId, e nao o 503
+# amigavel que o brief pede. Isso e o requisito obrigatorio 2 (tratamento de falhas),
+# deliberadamente adiado — ver "Deferred" no NOTES.md.
