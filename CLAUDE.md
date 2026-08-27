@@ -40,6 +40,10 @@ dotnet ef migrations add <Name> --project backend/Estoque.Api
 dotnet ef database update       --project backend/Estoque.Api
 
 docker exec korp-db psql -U postgres -d estoque -c 'select * from "Produtos";'
+
+# Timestamps print as UTC (the container's timezone). To read them in Brasília time:
+docker exec korp-db psql -U postgres -d estoque \
+  -c "set timezone='America/Sao_Paulo';" -c 'select * from "MovimentacoesEstoque";'
 ```
 
 Table names are EF-default PascalCase, so `psql` queries need double quotes.
@@ -53,3 +57,7 @@ Table names are EF-default PascalCase, so `psql` queries need double quotes.
 - **LINQ:** write queries as visible, idiomatic LINQ — the video deliverable requires pointing
   at concrete examples and explaining that EF Core translates them to SQL.
 - **Migrations:** never hand-edit a generated migration; add a new one.
+- **Timestamps:** always `DateTime.UtcNow` into `timestamptz`, serialized as ISO 8601 with the
+  `Z` suffix. Never `DateTime.Now`, never store local time. A row reading `23:59+00` is
+  `20:59` in Brasília — the `+00` says so. Converting to the user's timezone is the *display*
+  layer's job: `set timezone` in psql, Angular's `DatePipe` in the UI.
