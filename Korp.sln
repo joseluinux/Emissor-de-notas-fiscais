@@ -9,6 +9,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Estoque.Api", "backend\Esto
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Faturamento.Api", "backend\Faturamento.Api\Faturamento.Api.csproj", "{E408AFDC-AA8E-473A-8819-A4B058B0A48C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Estoque.Api.Tests", "backend\Estoque.Api.Tests\Estoque.Api.Tests.csproj", "{8CE133B1-59AA-48C0-B832-0FCD3E626DB7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Faturamento.Api.Tests", "backend\Faturamento.Api.Tests\Faturamento.Api.Tests.csproj", "{E9E31636-C9C2-40D5-A387-8346148181B0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +30,19 @@ Global
 		{E408AFDC-AA8E-473A-8819-A4B058B0A48C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E408AFDC-AA8E-473A-8819-A4B058B0A48C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E408AFDC-AA8E-473A-8819-A4B058B0A48C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8CE133B1-59AA-48C0-B832-0FCD3E626DB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8CE133B1-59AA-48C0-B832-0FCD3E626DB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8CE133B1-59AA-48C0-B832-0FCD3E626DB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8CE133B1-59AA-48C0-B832-0FCD3E626DB7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E9E31636-C9C2-40D5-A387-8346148181B0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E9E31636-C9C2-40D5-A387-8346148181B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E9E31636-C9C2-40D5-A387-8346148181B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E9E31636-C9C2-40D5-A387-8346148181B0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{82B33115-43B2-4274-8158-26921A8BC7EE} = {4D49148B-246C-4E9E-A561-1F4538B69571}
 		{E408AFDC-AA8E-473A-8819-A4B058B0A48C} = {4D49148B-246C-4E9E-A561-1F4538B69571}
+		{8CE133B1-59AA-48C0-B832-0FCD3E626DB7} = {4D49148B-246C-4E9E-A561-1F4538B69571}
+		{E9E31636-C9C2-40D5-A387-8346148181B0} = {4D49148B-246C-4E9E-A561-1F4538B69571}
 	EndGlobalSection
 EndGlobal
