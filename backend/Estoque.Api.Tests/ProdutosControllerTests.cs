@@ -2,7 +2,6 @@ using Estoque.Api.Controllers;
 using Estoque.Api.Domain;
 using Estoque.Api.Dtos;
 using Estoque.Api.Errors;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
