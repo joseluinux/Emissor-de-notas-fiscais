@@ -485,3 +485,7 @@ $RECYCLE.BIN/
 
 #my stuff
 Plans.md
+
+# Saida de teste e cobertura (regeradas por dotnet test + reportgenerator)
+[Tt]est[Rr]esults/
+coveragereport/

@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- Faz o dotnet test achar o runsettings sozinho, sem passar a flag na linha de comando. -->
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)../../coverlet.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>
