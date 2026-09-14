@@ -46,16 +46,16 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore
-        run: dotnet restore Korp.sln
+        run: dotnet restore Emissor.sln
 
       - name: Build
-        run: dotnet build Korp.sln --configuration Release --no-restore
+        run: dotnet build Emissor.sln --configuration Release --no-restore
 
       # O coverlet.runsettings ja vem pelo RunSettingsFilePath nos .csproj de teste;
       # o --collect e o que liga o coletor.
       - name: Testes
         run: >
-          dotnet test Korp.sln
+          dotnet test Emissor.sln
           --configuration Release
           --no-build
           --collect:"XPlat Code Coverage"
