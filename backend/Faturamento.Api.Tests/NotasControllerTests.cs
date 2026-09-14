@@ -88,16 +88,18 @@ public class NotasControllerTests
     }
 
     [Fact]
-    public async Task ObterPorId_inexistente_devolve_404_como_ProblemDetails()
+    public async Task ObterPorId_inexistente_lanca_NotaNaoEncontrada()
     {
+        // Lancar em vez de devolver faz a falha passar pelo DominioExceptionHandler, que e
+        // quem acrescenta o correlationId e registra a linha de log.
         await using var db = TestDb.Criar();
         var controller = new NotasController(db, new EstoqueFalso());
 
-        var resultado = await controller.ObterPorId(999, default);
+        var erro = await Assert.ThrowsAsync<NotaNaoEncontradaException>(
+            () => controller.ObterPorId(999, default));
 
-        var problema = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(resultado.Result).Value);
-        Assert.Equal(StatusCodes.Status404NotFound, problema.Status);
-        Assert.Contains("999", problema.Detail);
+        Assert.Equal(StatusCodes.Status404NotFound, erro.StatusCode);
+        Assert.Contains("999", erro.Message);
     }
 
     [Fact]
@@ -184,16 +186,19 @@ public class NotasControllerTests
     }
 
     [Fact]
-    public async Task Imprimir_inexistente_devolve_404_e_nao_chama_o_estoque()
+    public async Task Imprimir_inexistente_lanca_NotaNaoEncontrada_e_nao_chama_o_estoque()
     {
         await using var db = TestDb.Criar();
         var estoque = new EstoqueFalso();
         var controller = new NotasController(db, estoque);
 
-        var resultado = await controller.Imprimir(999, default);
+        var erro = await Assert.ThrowsAsync<NotaNaoEncontradaException>(
+            () => controller.Imprimir(999, default));
 
-        var problema = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(resultado.Result).Value);
-        Assert.Equal(StatusCodes.Status404NotFound, problema.Status);
+        Assert.Equal(StatusCodes.Status404NotFound, erro.StatusCode);
+        Assert.Contains("999", erro.Message);
+
+        // Nota inexistente nao pode tocar o Estoque.
         Assert.Equal(0, estoque.Chamadas);
     }
 

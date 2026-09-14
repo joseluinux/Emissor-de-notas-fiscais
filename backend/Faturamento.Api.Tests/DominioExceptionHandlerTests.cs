@@ -129,9 +129,29 @@ public class DominioExceptionHandlerTests
     }
 
     [Fact]
-    public void NotaNaoAberta_e_EstoqueRecusou_sao_recusas_de_dominio()
+    public void Toda_recusa_de_negocio_deriva_de_DominioException()
     {
+        // O handler filtra por este tipo base. Uma excecao fora da hierarquia nao ganha o
+        // correlationId e nao gera linha de log — foi exatamente assim que o 404 da nota
+        // inexistente ficou invisivel no servidor antes de virar NotaNaoEncontradaException.
         Assert.IsAssignableFrom<DominioException>(new NotaNaoAbertaException(TestDb.Nota(1)));
         Assert.IsAssignableFrom<DominioException>(new EstoqueRecusouException(409, "x"));
+        Assert.IsAssignableFrom<DominioException>(new NotaNaoEncontradaException(999));
+    }
+
+    [Fact]
+    public async Task NotaNaoEncontrada_vira_404_com_correlationId()
+    {
+        // A regressao que este fix corrige: antes o 404 saia pelo controller, sem passar
+        // pelo handler, entao nao tinha correlationId nem log.
+        var (handler, spy) = Montar();
+        var contexto = new DefaultHttpContext();
+
+        await handler.TryHandleAsync(contexto, new NotaNaoEncontradaException(999), default);
+
+        Assert.Equal(StatusCodes.Status404NotFound, contexto.Response.StatusCode);
+        Assert.Equal(StatusCodes.Status404NotFound, spy.Escrito!.Status);
+        Assert.Contains("999", spy.Escrito.Detail);
+        Assert.True(spy.Escrito.Extensions.ContainsKey("correlationId"));
     }
 }
