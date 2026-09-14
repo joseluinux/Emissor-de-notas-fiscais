@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Faturamento.Api.Dtos;
 
+/// <summary>Payload for creating an invoice. Numero and Status are not accepted — the service sets both.</summary>
 public record CriarNotaFiscalRequest
 {
     [Required(ErrorMessage = "Informe ao menos um item.")]
@@ -9,6 +10,15 @@ public record CriarNotaFiscalRequest
     public List<CriarNotaFiscalItemRequest> Itens { get; init; } = [];
 }
 
+/// <summary>
+/// One line of a new invoice.
+/// </summary>
+/// <remarks>
+/// TODO(revisar): the caller supplies Descricao, and nothing checks it against the product
+/// registered in Estoque — neither at creation nor at print time, when only ProdutoCodigo and
+/// Quantidade are sent over. Was trusting the caller's description deliberate (it is a snapshot,
+/// and looking it up would mean an extra call to Estoque), or is a lookup missing?
+/// </remarks>
 public record CriarNotaFiscalItemRequest
 {
     [Required(ErrorMessage = "O codigo do produto e obrigatorio.")]

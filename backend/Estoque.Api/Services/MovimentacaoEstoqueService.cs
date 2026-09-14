@@ -7,10 +7,21 @@ using Npgsql;
 
 namespace Estoque.Api.Services;
 
+/// <summary>
+/// The stock debit, which is the one operation the whole system hinges on. It has to be
+/// all-or-nothing across every line, idempotent on the caller's reference, and safe under two
+/// simultaneous debits of the same product.
+/// </summary>
 public sealed class MovimentacaoEstoqueService(EstoqueDbContext db)
 {
+    /// <summary>PostgreSQL SQLSTATE for unique_violation — see <see cref="EhViolacaoDeUnicidade"/>.</summary>
     private const string ViolacaoDeUnicidade = "23505";
 
+    /// <summary>Reads back a movement by its reference, in the exact shape the debit returns.</summary>
+    /// <remarks>
+    /// Shared with <see cref="RegistrarBaixaAsync"/> on purpose: a replay must produce the same
+    /// body as the original call, and that only holds while both go through one projection.
+    /// </remarks>
     public async Task<MovimentacaoResponse?> BuscarPorReferenciaAsync(
         string referencia,
         CancellationToken cancellationToken)
@@ -34,6 +45,9 @@ public sealed class MovimentacaoEstoqueService(EstoqueDbContext db)
     /// Debits every line all-or-nothing. Returns the movement plus whether it was a replay of an
     /// earlier call with the same reference rather than a fresh debit.
     /// </summary>
+    /// <exception cref="ProdutoDesconhecidoException">At least one code is not registered (422).</exception>
+    /// <exception cref="SaldoInsuficienteException">At least one line exceeds the available balance (422).</exception>
+    /// <exception cref="ConflitoDeConcorrenciaException">Another debit changed one of these products first (409).</exception>
     public async Task<(MovimentacaoResponse Movimentacao, bool Replay)> RegistrarBaixaAsync(
         CriarMovimentacaoRequest request,
         CancellationToken cancellationToken)
@@ -44,6 +58,9 @@ public sealed class MovimentacaoEstoqueService(EstoqueDbContext db)
             .Select(g => new { Codigo = g.Key, Quantidade = g.Sum(i => i.Quantidade) })
             .ToList();
 
+        // Fast path for a replay: a reference already on file means this debit was applied before,
+        // so return the stored result untouched rather than validating and debiting again. The
+        // unique index below is what actually enforces this; the lookup only avoids the wasted work.
         var jaRegistrada = await BuscarPorReferenciaAsync(request.Referencia, cancellationToken);
         if (jaRegistrada is not null)
         {
@@ -55,6 +72,7 @@ public sealed class MovimentacaoEstoqueService(EstoqueDbContext db)
             .Where(p => codigos.Contains(p.Codigo))
             .ToDictionaryAsync(p => p.Codigo, cancellationToken);
 
+        // Same reasoning as the shortfalls below: name every unknown code in one refusal.
         var desconhecidos = codigos.Where(c => !produtos.ContainsKey(c)).ToList();
         if (desconhecidos.Count > 0)
         {
@@ -101,7 +119,9 @@ public sealed class MovimentacaoEstoqueService(EstoqueDbContext db)
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            // xmin changed under us: another debit touched one of these products first.
+            // xmin changed under us: another debit touched one of these products first. Nothing was
+            // written, so the answer is a clean 409 naming the products — deliberately no retry
+            // here, the caller decides whether to try again.
             var emConflito = ex.Entries
                 .Select(e => e.Entity)
                 .OfType<Produto>()
@@ -114,9 +134,14 @@ public sealed class MovimentacaoEstoqueService(EstoqueDbContext db)
         {
             // Two identical calls raced past the check above. The unique index on Referencia is
             // the real idempotency guarantee; the check is only a fast path.
+            // Clear the tracker first: this unit of work was rejected whole, and the aborted Saldo
+            // changes must not be carried into the read that follows.
             db.ChangeTracker.Clear();
 
             var replay = await BuscarPorReferenciaAsync(request.Referencia, cancellationToken);
+
+            // No row under this reference means the violation came from some other unique index, so
+            // it is not ours to translate into a replay.
             if (replay is null)
             {
                 throw;
