@@ -11,9 +11,9 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.19" />
-    <!-- Npgsql 9.0.4 traz Relational 9.0.1; fixar em 9.0.19 unifica o grafo e evita MSB3277. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.19" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.*" />
+    <!-- Mantém a mesma faixa de versão do EF Core usada nos projetos da API para evitar CS1705. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.*" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
