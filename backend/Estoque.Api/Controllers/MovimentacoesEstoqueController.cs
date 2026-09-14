@@ -5,6 +5,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Estoque.Api.Controllers;
 
+/// <summary>
+/// The debit endpoint Faturamento calls when an invoice is printed, and the audit trail it
+/// leaves behind.
+/// </summary>
 [ApiController]
 [Route("api/estoque/movimentacoes")]
 public class MovimentacoesEstoqueController(MovimentacaoEstoqueService servico) : ControllerBase
@@ -25,11 +29,14 @@ public class MovimentacoesEstoqueController(MovimentacaoEstoqueService servico) 
     {
         var (movimentacao, replay) = await servico.RegistrarBaixaAsync(request, cancellationToken);
 
+        // The replay flag is the only thing separating the two: a 201 would claim a debit happened
+        // on a call that debited nothing.
         return replay
             ? Ok(movimentacao)
             : CreatedAtRoute(nameof(ObterPorReferencia), new { referencia = movimentacao.Referencia }, movimentacao);
     }
 
+    /// <summary>Audit trail for one movement, addressed by the caller's reference.</summary>
     [HttpGet("{referencia}", Name = nameof(ObterPorReferencia))]
     [ProducesResponseType<MovimentacaoResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

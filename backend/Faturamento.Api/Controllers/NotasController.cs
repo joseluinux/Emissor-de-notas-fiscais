@@ -7,16 +7,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Faturamento.Api.Controllers;
 
+/// <summary>
+/// Invoices: creation, reading, and the print flow that debits Estoque across the network.
+/// </summary>
 [ApiController]
 [Route("api/notas")]
 public class NotasController(AppDbContext db, IEstoqueClient estoque) : ControllerBase
 {
-    /// <summary>Lista as notas com seus itens, em ordem de numeracao.</summary>
+    /// <summary>Lists the invoices with their items, in numbering order.</summary>
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<NotaFiscalResponse>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<NotaFiscalResponse>>> Listar(
         CancellationToken cancellationToken)
     {
+        // AsNoTracking on the read paths: nothing here is going to be modified, so the change
+        // tracker would only cost memory. Include because the items are part of the response.
         var notas = await db.NotasFiscais
             .AsNoTracking()
             .Include(n => n.Itens)
@@ -26,6 +31,7 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
         return Ok(notas.Select(NotaFiscalResponse.De).ToList());
     }
 
+    /// <summary>Returns one invoice with its items, or 404 if the Id does not exist.</summary>
     [HttpGet("{id:int}", Name = nameof(ObterPorId))]
     [ProducesResponseType<NotaFiscalResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -38,6 +44,11 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
             .Include(n => n.Itens)
             .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
 
+        // TODO(revisar): CLAUDE.md says controllers throw domain exceptions and never build error
+        // bodies, and Estoque follows that with RecursoNaoEncontradoException. Here the 404 is built
+        // inline instead, in both this action and Imprimir, and there is no "nota nao encontrada"
+        // domain exception at all. Deliberate — a missing invoice is not a business rule — or just
+        // written before the convention settled?
         if (nota is null)
         {
             return Problem(
@@ -49,7 +60,7 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
         return Ok(NotaFiscalResponse.De(nota));
     }
 
-    /// <summary>Cria uma nota com status Aberta e o proximo Numero da sequence.</summary>
+    /// <summary>Creates an invoice with status Aberta and the next Numero from the sequence.</summary>
     [HttpPost]
     [ProducesResponseType<NotaFiscalResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -73,7 +84,8 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
 
         db.NotasFiscais.Add(nota);
 
-        // Numero fica preenchido aqui: o INSERT usa o default nextval e o Npgsql le o valor de volta.
+        // Numero is filled in here: the INSERT uses the nextval default and Npgsql reads the value
+        // back. Creation does not touch Estoque — no balance is reserved until the invoice is printed.
         await db.SaveChangesAsync(cancellationToken);
 
         var resposta = NotaFiscalResponse.De(nota);
@@ -81,12 +93,16 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
         return CreatedAtRoute(nameof(ObterPorId), new { id = nota.Id }, resposta);
     }
 
-    /// <summary>Imprime a nota: debita o Estoque e so entao fecha a nota.</summary>
+    /// <summary>Prints the invoice: debits Estoque and only then closes the invoice.</summary>
     /// <remarks>
-    /// A ordem importa. Debitar primeiro e fechar depois garante que uma falha nunca deixe uma
-    /// nota Fechada com o estoque nao debitado. O risco espelhado — debitar e falhar ao fechar —
-    /// e coberto pelo Estoque: a baixa e idempotente na referencia "nota-{id}", entao reimprimir
-    /// replica a baixa original em vez de debitar de novo.
+    /// The order matters. Debiting first and closing afterwards guarantees that a failure never
+    /// leaves an invoice Fechada with stock un-debited. The mirrored risk — debiting and then
+    /// failing to close — is covered by Estoque: the debit is idempotent on the reference
+    /// "nota-{id}", so reprinting replays the original debit instead of debiting again.
+    /// <para>
+    /// Known limit: if Estoque is unreachable the failure surfaces as a 500, not the friendly 503
+    /// the brief asks for. That is mandatory requirement 2, deliberately deferred — see NOTES.md.
+    /// </para>
     /// </remarks>
     [HttpPost("{id:int}/imprimir")]
     [ProducesResponseType<NotaFiscalResponse>(StatusCodes.Status200OK)]
@@ -97,7 +113,7 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
         int id,
         CancellationToken cancellationToken)
     {
-        // Sem AsNoTracking: esta nota vai ser alterada.
+        // No AsNoTracking: this invoice is going to be modified.
         var nota = await db.NotasFiscais
             .Include(n => n.Itens)
             .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
@@ -110,19 +126,25 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
                 detail: $"Nao existe nota fiscal com Id {id}.");
         }
 
+        // TODO(revisar): this check is not protected against a race — NotaFiscal has no concurrency
+        // token, unlike Produto with its xmin, so two simultaneous prints of the same invoice both
+        // pass here. Stock is safe either way (one reference, one debit), and both requests would
+        // close the invoice to the same state, so was leaving it unguarded a considered call?
         if (nota.Status != StatusNotaFiscal.Aberta)
         {
             throw new NotaNaoAbertaException(nota);
         }
 
+        // The invoice Id is the idempotency key on the Estoque side: the same invoice always
+        // produces the same reference, which is what makes a repeated print replay rather than debit.
         var baixa = new RegistrarMovimentacaoRequest(
             $"nota-{nota.Id}",
             nota.Itens
                 .Select(i => new MovimentacaoItemRequest(i.ProdutoCodigo, i.Quantidade))
                 .ToList());
 
-        // Uma unica chamada com todos os itens: o Estoque debita tudo ou nada.
-        // Recusas de regra sobem como EstoqueRecusouException e a nota continua Aberta.
+        // A single call with every item: Estoque debits all or nothing. Rule refusals come back as
+        // EstoqueRecusouException and the invoice stays Aberta, because the lines below never run.
         await estoque.RegistrarBaixaAsync(baixa, cancellationToken);
 
         nota.Status = StatusNotaFiscal.Fechada;

@@ -1,8 +1,9 @@
 namespace Faturamento.Api.Domain;
 
 /// <summary>
-/// Base das rejeicoes de regra de negocio. O <see cref="StatusCode"/> vira o status da
-/// resposta ProblemDetails; a mensagem vira o campo detail, entao ela e legivel pelo usuario.
+/// Base for business-rule refusals. <see cref="StatusCode"/> becomes the status of the
+/// ProblemDetails response and the message becomes its detail field, so the message is read by
+/// the user — write it accordingly.
 /// </summary>
 public abstract class DominioException(string message, int statusCode) : Exception(message)
 {

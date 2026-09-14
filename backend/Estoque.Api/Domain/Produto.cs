@@ -1,5 +1,6 @@
 namespace Estoque.Api.Domain;
 
+/// <summary>A registered product and the balance available for invoices to consume.</summary>
 public class Produto
 {
     public int Id { get; set; }

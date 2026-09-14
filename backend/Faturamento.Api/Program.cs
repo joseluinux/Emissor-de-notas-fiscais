@@ -9,8 +9,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddControllers();
 
-// Cliente tipado para o Estoque. De proposito sem retry, sem circuit breaker e sem timeout
-// proprio: tratar a indisponibilidade do Estoque e o requisito obrigatorio 2 e esta adiado.
+// Typed client for Estoque. Deliberately without retry, circuit breaker or a timeout of its own:
+// handling Estoque being unavailable is mandatory requirement 2 and is deferred — see NOTES.md.
 var estoqueBaseUrl = builder.Configuration["Servicos:Estoque:BaseUrl"]
     ?? throw new InvalidOperationException(
         "Configuracao 'Servicos:Estoque:BaseUrl' ausente. Veja appsettings.Development.json.");
@@ -18,8 +18,8 @@ var estoqueBaseUrl = builder.Configuration["Servicos:Estoque:BaseUrl"]
 builder.Services.AddHttpClient<IEstoqueClient, EstoqueClient>(client =>
     client.BaseAddress = new Uri(estoqueBaseUrl));
 
-// ProblemDetails + handler antes de tudo, para que nenhum controller precise inventar
-// um corpo de erro proprio.
+// ProblemDetails plus the handler ahead of everything else, so no controller has to invent an
+// error body of its own.
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DominioExceptionHandler>();
 
@@ -30,13 +30,15 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+// TODO(revisar): nothing registers authentication or authorization in this service, and Estoque
+// has no equivalent line. Is this a leftover from the project template, or a placeholder for auth
+// that is planned? I could not tell from the code, NOTES.md or CLAUDE.md.
 app.UseAuthorization();
 
 app.MapControllers();
