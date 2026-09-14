@@ -1,6 +1,6 @@
 # Emissor de Notas Fiscais
 
-[![CI](https://github.com/joseluinux/emissor-notas-fiscais/actions/workflows/ci.yml/badge.svg)](https://github.com/joseluinux/emissor-notas-fiscais/actions/workflows/ci.yml)
+[![CI](https://github.com/joseluinux/Emissor-de-notas-fiscais/actions/workflows/ci.yml/badge.svg)](https://github.com/joseluinux/Emissor-de-notas-fiscais/actions/workflows/ci.yml)
 
 Sistema de emissão de notas fiscais com arquitetura de microsserviços: dois serviços
 **ASP.NET Core 9** independentes, cada um com o seu próprio banco PostgreSQL, e um
