@@ -51,10 +51,7 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
         // written before the convention settled?
         if (nota is null)
         {
-            return Problem(
-                statusCode: StatusCodes.Status404NotFound,
-                title: "Nota nao encontrada",
-                detail: $"Nao existe nota fiscal com Id {id}.");
+            throw new NotaNaoEncontradaException(id);
         }
 
         return Ok(NotaFiscalResponse.De(nota));
@@ -120,10 +117,7 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
 
         if (nota is null)
         {
-            return Problem(
-                statusCode: StatusCodes.Status404NotFound,
-                title: "Nota nao encontrada",
-                detail: $"Nao existe nota fiscal com Id {id}.");
+            throw new NotaNaoEncontradaException(id);
         }
 
         // TODO(revisar): this check is not protected against a race — NotaFiscal has no concurrency
