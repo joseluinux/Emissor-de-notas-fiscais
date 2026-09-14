@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Nada aqui escreve no repositorio: so leitura.
+permissions:
+  contents: read
+
+# Um push novo no mesmo ref cancela a execucao anterior — nao adianta esperar
+# o resultado de um commit que ja foi substituido.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-e-teste:
+    name: Build e testes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A versao sai do global.json, entao CI e maquina local usam o mesmo SDK.
+      - name: Instalar o .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Sem packages.lock.json o cache do setup-dotnet nao funciona; a chave vai
+      # nos .csproj mesmo, que e onde as versoes estao declaradas.
+      - name: Cache de pacotes NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Korp.sln
+
+      - name: Build
+        run: dotnet build Korp.sln --configuration Release --no-restore
+
+      # O coverlet.runsettings ja vem pelo RunSettingsFilePath nos .csproj de teste;
+      # o --collect e o que liga o coletor.
+      - name: Testes
+        run: >
+          dotnet test Korp.sln
+          --configuration Release
+          --no-build
+          --collect:"XPlat Code Coverage"
+          --results-directory ${{ github.workspace }}/TestResults
+          --logger trx
+          --logger "console;verbosity=normal"
+
+      - name: Gerar relatorio de cobertura
+        if: always()
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+          # Glob de um nivel so, de proposito: o --logger trx deixa uma copia de cada
+          # coverage.cobertura.xml dentro da pasta de anexos, e "**" leria os dois,
+          # gerando um MultiReport 4x com os mesmos dados contados em dobro.
+          reportgenerator \
+            -reports:"${{ github.workspace }}/TestResults/*/coverage.cobertura.xml" \
+            -targetdir:"${{ github.workspace }}/coveragereport" \
+            -reporttypes:"TextSummary;Html;MarkdownSummaryGithub"
+
+      # Aparece direto na aba Summary da execucao, sem precisar baixar artefato.
+      - name: Publicar a cobertura no resumo da execucao
+        if: always()
+        run: cat "${{ github.workspace }}/coveragereport/SummaryGithub.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar resultados e relatorio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-de-teste
+          path: |
+            ${{ github.workspace }}/TestResults
+            ${{ github.workspace }}/coveragereport
+          retention-days: 14
