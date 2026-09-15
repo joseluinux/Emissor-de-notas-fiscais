@@ -63,6 +63,14 @@ jobs:
           --logger trx
           --logger "console;verbosity=normal"
 
+      # Um passo de teste verde nao diz QUAIS testes rodaram. Este passo le os .trx e
+      # falha a build se nenhum teste da pista PostgreSQL executar — sem ele, Docker
+      # indisponivel no runner deixaria idempotencia, concorrencia e atomicidade sem
+      # verificacao nenhuma, com o CI continuando verde.
+      - name: Provar quais testes rodaram
+        if: always()
+        run: python3 .github/scripts/verificar_testes.py "${{ github.workspace }}/TestResults"
+
       - name: Gerar relatorio de cobertura
         if: always()
         run: |
