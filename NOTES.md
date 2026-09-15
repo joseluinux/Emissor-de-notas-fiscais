@@ -131,18 +131,34 @@ Done:
       (nota nao Aberta) / 422 and 409 forwarded from Estoque with detail intact
 - [x] Both `.http` files rewritten as the demo script; `Faturamento.Api.http` is the
       cross-service walkthrough
-- [x] **Tests**: 80 xUnit tests (43 Estoque, 37 Faturamento) over the EF InMemory provider,
-      ~88% line coverage, coverage report via coverlet + ReportGenerator
+- [x] **Tests**: 84 xUnit tests (46 Estoque, 38 Faturamento), ~88% line coverage, coverage
+      report via coverlet + ReportGenerator. Two lanes on purpose: the EF InMemory provider
+      carries the pure-logic tests (`TestDb` in each project), and a real PostgreSQL lane
+      carries what only a real database can prove
+- [x] **Testcontainers lane**: `PostgresFixture` starts a disposable `postgres:16` once per
+      run and applies the real migrations instead of `EnsureCreated`, so the suite also
+      verifies that the migrations apply cleanly. `PostgresCollection` shares that container
+      and forces sequential execution, which is what makes `TRUNCATE` between tests safe.
+      `CriarContexto()` hands out a **new** context per call, so an assertion reads the
+      database and not the change tracker
 - [x] **CI**: GitHub Actions running build + tests on every push and pull request
+- [x] **Docs**: `docs/mecanismos.md` maps the three guarantees that do not live in any single
+      file — idempotency, concurrency and failure ordering — with the pieces by
+      `file:line`, what breaks if each is removed, and a live demo for each
 
-Known weakness in the test suite — being addressed next:
+Known weakness in the test suite — half fixed:
 
 - The InMemory provider does not enforce unique indexes, has no `xmin`, and has no real
-  transactions. That means the three hardest guarantees — idempotency, concurrency and the
-  all-or-nothing debit — are **not actually verified** by the suite today. They need a real
-  Postgres (Testcontainers) lane. See the `TestDb` helper in each test project.
-- Some tests assert against the same `DbContext` used to act, so "it was persisted"
-  assertions pass even when nothing is saved.
+  transactions, so the three hardest guarantees passed there by accident. Measured, not
+  assumed: deleting `.IsUnique()` from `Referencia` left all 81 tests green, back when the
+  suite was InMemory only.
+- [x] **Idempotency** is now verified on the Postgres lane — a repeated `referencia` replays
+      instead of debiting twice, and the unique index rejects the duplicate row.
+- [ ] **Concurrency** (`xmin` → 409) and the **all-or-nothing** debit still have no
+      real-database test. Same lane, next ticket.
+- Some InMemory tests still assert against the same `DbContext` used to act, so "it was
+  persisted" passes even when nothing is saved. The Postgres lane avoids this by
+  construction; the InMemory tests have not been swept.
 
 Still missing:
 
