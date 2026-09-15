@@ -42,7 +42,7 @@ para a mesma referência?** A resposta são dois `return` que a pulam.
 
 | # | Peça | Onde |
 | --- | --- | --- |
-| 1 | Chave determinística `"nota-{id}"` | `Faturamento.Api/Controllers/NotasController.cs:135` |
+| 1 | Chave determinística `"nota-{id}"` | `Faturamento.Api/Controllers/NotasController.cs:130` |
 | 2 | Índice único em `Referencia` | `Estoque.Api/Data/EstoqueDbContext.cs:47` |
 | 3 | Atalho de replay | `Estoque.Api/Services/MovimentacaoEstoqueService.cs:64` |
 | 4 | Rede de proteção (violação 23505) | `Estoque.Api/Services/MovimentacaoEstoqueService.cs:133` |

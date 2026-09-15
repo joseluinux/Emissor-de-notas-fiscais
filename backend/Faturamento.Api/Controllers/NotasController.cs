@@ -44,11 +44,6 @@ public class NotasController(AppDbContext db, IEstoqueClient estoque) : Controll
             .Include(n => n.Itens)
             .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
 
-        // TODO(revisar): CLAUDE.md says controllers throw domain exceptions and never build error
-        // bodies, and Estoque follows that with RecursoNaoEncontradoException. Here the 404 is built
-        // inline instead, in both this action and Imprimir, and there is no "nota nao encontrada"
-        // domain exception at all. Deliberate — a missing invoice is not a business rule — or just
-        // written before the convention settled?
         if (nota is null)
         {
             throw new NotaNaoEncontradaException(id);
