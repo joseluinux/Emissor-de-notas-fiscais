@@ -15,7 +15,6 @@ checklist item.
 ```
 backend/Estoque.Api/       Stock service    — produtos, saldos    :5001
 backend/Faturamento.Api/   Billing service  — notas fiscais       :5002
-frontend/                  Angular app (not scaffolded yet)       :4200
 Emissor.sln                both backend projects
 ```
 
@@ -60,4 +59,4 @@ Table names are EF-default PascalCase, so `psql` queries need double quotes.
 - **Timestamps:** always `DateTime.UtcNow` into `timestamptz`, serialized as ISO 8601 with the
   `Z` suffix. Never `DateTime.Now`, never store local time. A row reading `23:59+00` is
   `20:59` in Brasília — the `+00` says so. Converting to the user's timezone is the *display*
-  layer's job: `set timezone` in psql, Angular's `DatePipe` in the UI.
+  layer's job: `set timezone` in psql, or the client's formatter in any UI.

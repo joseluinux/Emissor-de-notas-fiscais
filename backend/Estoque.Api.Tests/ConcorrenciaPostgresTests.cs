@@ -106,4 +106,91 @@ public class ConcorrenciaPostgresTests(PostgresFixture postgres) : IAsyncLifetim
         Assert.Equal(8, (await verificacao.Produtos.SingleAsync()).Saldo);
         Assert.Equal(1, await verificacao.MovimentacoesEstoque.CountAsync());
     }
+
+    [Fact]
+    public async Task Uma_linha_sem_saldo_impede_o_debito_de_todas()
+    {
+        // P001 tem saldo de sobra; P002 nao. As duas linhas vao na MESMA baixa.
+        await using (var arranjo = postgres.CriarContexto())
+        {
+            arranjo.Produtos.AddRange(
+                new Produto { Codigo = "P001", Descricao = "Teclado", Saldo = 10 },
+                new Produto { Codigo = "P002", Descricao = "Mouse", Saldo = 1 });
+            await arranjo.SaveChangesAsync();
+        }
+
+        await using (var acao = postgres.CriarContexto())
+        {
+            var servico = new MovimentacaoEstoqueService(acao);
+
+            var erro = await Assert.ThrowsAsync<SaldoInsuficienteException>(
+                () => servico.RegistrarBaixaAsync(
+                    Baixa("nota-1", ("P001", 2), ("P002", 5)),
+                    default));
+
+            Assert.Contains("P002", erro.Message);
+            Assert.DoesNotContain("P001", erro.Message);
+        }
+
+        await using var verificacao = postgres.CriarContexto();
+        var saldos = await verificacao.Produtos.ToDictionaryAsync(p => p.Codigo, p => p.Saldo);
+
+        // O ponto do teste: P001 tinha saldo suficiente e mesmo assim NAO foi debitado. Foi
+        // recusado por dividir a operacao com uma linha que nao cabia. E isso que tudo-ou-nada
+        // significa — nao existe baixa parcial.
+        Assert.Equal(10, saldos["P001"]);
+        Assert.Equal(1, saldos["P002"]);
+        Assert.Empty(await verificacao.MovimentacoesEstoque.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Conflito_numa_linha_desfaz_o_debito_das_outras()
+    {
+        // O teste acima cobre tudo-ou-nada por VALIDACAO: as faltas sao detectadas antes de
+        // qualquer mutacao, entao o SaveChanges nem chega a ser chamado. Este cobre o outro
+        // caminho, por TRANSACAO: a falha acontece no meio da gravacao, com saldos ja
+        // decrementados em memoria, e mesmo assim nada parcial sobra no banco.
+        await using (var arranjo = postgres.CriarContexto())
+        {
+            arranjo.Produtos.AddRange(
+                new Produto { Codigo = "P001", Descricao = "Teclado", Saldo = 10 },
+                new Produto { Codigo = "P002", Descricao = "Mouse", Saldo = 10 });
+            await arranjo.SaveChangesAsync();
+        }
+
+        async Task<Exception?> DebitarDoisProdutosAsync(string referencia)
+        {
+            await using var db = postgres.CriarContexto();
+            var servico = new MovimentacaoEstoqueService(db);
+
+            try
+            {
+                await servico.RegistrarBaixaAsync(
+                    Baixa(referencia, ("P001", 1), ("P002", 1)),
+                    default);
+                return null;
+            }
+            catch (Exception e)
+            {
+                return e;
+            }
+        }
+
+        // Duas baixas simultaneas tocando os MESMOS dois produtos. O xmin faz uma delas perder,
+        // e ela perde depois de ja ter decrementado os dois saldos no rastreador.
+        var resultados = await Task.WhenAll(
+            DebitarDoisProdutosAsync("nota-1"),
+            DebitarDoisProdutosAsync("nota-2"));
+
+        Assert.Equal(1, resultados.Count(r => r is null));
+
+        await using var verificacao = postgres.CriarContexto();
+        var saldos = await verificacao.Produtos.ToDictionaryAsync(p => p.Codigo, p => p.Saldo);
+
+        // Cada produto debitado exatamente UMA vez. Se a transacao nao cobrisse as duas linhas,
+        // a perdedora poderia ter gravado um dos updates antes de falhar no outro.
+        Assert.Equal(9, saldos["P001"]);
+        Assert.Equal(9, saldos["P002"]);
+        Assert.Equal(1, await verificacao.MovimentacoesEstoque.CountAsync());
+    }
 }

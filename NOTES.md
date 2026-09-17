@@ -12,7 +12,7 @@
 
 An invoice issuance system built as a portfolio project, exercising a microservices
 architecture end to end: two independent backend services with their own databases, an
-Angular front-end, and one operation that has to stay correct across a network boundary.
+and one operation that has to stay correct across a network boundary.
 
 ## Features
 
@@ -60,7 +60,7 @@ c. **Idempotency** — repeated operations must not cause unwanted side effects.
 
 ## What we are building, in one paragraph
 
-An Angular SPA talking to two independent ASP.NET Core services. **Estoque.Api** (Stock)
+Two independent ASP.NET Core services. **Estoque.Api** (Stock)
 owns products and their balances. **Faturamento.Api** (Billing) owns invoices and their
 items. The whole system hinges on one cross-service transaction: *printing* an invoice
 flips it from `Open` to `Closed` **and** debits every item's quantity from stock — so
@@ -78,7 +78,7 @@ is insufficient, and when the same print is requested twice.
 | API style | Controllers (`AddControllers()` / `MapControllers()`), not minimal APIs | `Program.cs` |
 | Tests | **xUnit** + EF Core InMemory, **coverlet** + **ReportGenerator** for coverage | `*.Tests.csproj` |
 | CI | **GitHub Actions** — build + test on every push and PR | `.github/workflows/ci.yml` |
-| Frontend | **Angular** | `frontend/` — not scaffolded yet |
+| Frontend | **out of scope** — this repository is the backend | — |
 
 Local toolchain verified on this machine: `dotnet` SDK 9.0.120, Node 26.7.0, npm 12.0.2,
 Docker 29.7.2. `ng` and `psql` are **not** on PATH — use `npx ng` and run Postgres in a
@@ -99,7 +99,6 @@ container.
 │   ├── Estoque.Api.Tests/
 │   ├── Faturamento.Api/         ← Billing Service    · http://localhost:5002
 │   └── Faturamento.Api.Tests/
-└── frontend/                    ← EMPTY. Angular app goes here (default: :4200)
 ```
 
 Ports come from each project's `Properties/launchSettings.json` (`http` profile,
@@ -160,13 +159,14 @@ Known weakness in the test suite — half fixed:
   persisted" passes even when nothing is saved. The Postgres lane avoids this by
   construction; the InMemory tests have not been swept.
 
+- [x] **Requirement 2 — fault handling**: the Estoque client carries timeout, retry and a
+      circuit breaker. With Estoque down, printing answers **503 in ~10s with a readable
+      message** instead of 500 in 100s with a stack trace, and the invoice stays Aberta
+
 Still missing:
 
-- [ ] No resilience policy, and **no 503 path when Estoque is unreachable** — today a failed
-      call surfaces as a 500. This is requirement 2.
-- [ ] No CORS policy — required before Angular on :4200 can call :5001/:5002
-- [ ] No Angular workspace in `frontend/`
 - [ ] No `docker-compose.yml` for PostgreSQL (decided against for now)
+- [ ] Stretch goal (b), AI, not attempted — out of scope by decision
 
 ## Design
 
@@ -230,17 +230,27 @@ Billing — `:5002`
 5. On Stock unreachable → **503**, invoice stays `Aberta`, user sees a clear "Stock
    service unavailable, try again" message. **This is requirement 2** — the demo is: stop
    `Estoque.Api`, click Print, show the friendly error, restart it, click Print again, show
-   it succeed. *Not implemented yet.*
+   it succeed.
 
 Keep the invoice status change and the stock debit in that order (debit first, close
 after) so a failure never leaves a closed invoice with un-debited stock.
 
 ### Requirement 2 — fault handling
 
-Register the Billing→Stock client with `IHttpClientFactory` and a short timeout, and
-map the failure to a user-facing message. `Microsoft.Extensions.Http.Resilience` (or
-Polly) gives retry + circuit breaker in a few lines. The user must never see a raw 500
-or a stack trace.
+The Billing→Stock typed client carries a standard resilience handler: 2s per attempt, 2
+retries, a circuit breaker over a 10s window, and a 10s ceiling for the whole operation. The
+2s attempt timeout is what replaces the `HttpClient` default of **100 seconds**.
+
+Transport failures, timeouts and an open circuit are translated in `EstoqueClient` into
+`EstoqueIndisponivelException` → **503**, with the original exception kept as `InnerException`
+so the log distinguishes a refused connection from a timeout. A cancellation requested by the
+caller is explicitly *not* treated as unavailability — that would blame Estoque for a user
+closing the tab.
+
+Retrying a stock debit is only safe because the operation is idempotent on `referencia`: if
+the first attempt reached Estoque and the response was lost, the second finds `nota-{id}`
+already recorded and replays it. Without that guarantee the correct policy would be no retry
+at all.
 
 ### Backend error handling
 
@@ -268,18 +278,6 @@ executed in memory.
 - **(b) AI:** optional; if attempted, keep it small and clearly scoped (e.g. generating a
   product description from its code). Do not let it delay the mandatory scope.
 
-### Frontend conventions
-
-- Screens: product list + form, invoice list + form (multi-item), invoice detail with the
-  **Print** button and its processing indicator (disable the button while in flight).
-- Lifecycles: `ngOnInit` for initial loads, `ngOnDestroy` for subscription teardown,
-  `ngOnChanges` where a child component reacts to input changes.
-- RxJS: `HttpClient` observables, `switchMap` for dependent calls, `catchError` mapping
-  backend ProblemDetails to UI messages, `finalize` to clear the loading flag,
-  `takeUntilDestroyed`/`takeUntil` for unsubscription, `debounceTime` on any search.
-- Component library: pick **one** and stick to it (Angular Material or PrimeNG).
-- Point the app at the two services through environment files, not hardcoded URLs.
-
 ## Local development
 
 ```bash
@@ -298,9 +296,6 @@ dotnet test Emissor.sln
 # EF Core migrations (per service)
 dotnet ef migrations add Inicial --project backend/Estoque.Api
 dotnet ef database update --project backend/Estoque.Api
-
-# Frontend (ng is not installed globally)
-npx ng serve                                     # http://localhost:4200
 ```
 
 The local dev connection strings live in each service's committed
@@ -310,23 +305,21 @@ if that ever stops being true. `bin/` and `obj/` are **not** tracked.
 
 ## Open decisions
 
-1. Angular version and component library (Material vs PrimeNG) — affects every screen.
-2. Whether to attempt the AI stretch goal, and with what provider.
-3. Whether services get a `docker-compose.yml` (nice for the demo) or stay `dotnet run`.
-4. UI language — Portuguese labels (matching the backend naming) or English.
+1. Whether to attempt the AI stretch goal, and with what provider.
+2. Whether services get a `docker-compose.yml` (nice for the demo) or stay `dotnet run`.
 
 ## Demo walkthrough checklist
 
 A recorded walkthrough is worth having for the portfolio, and preparing it is the best test
 of whether the code is actually understood. Keep it answerable at all times:
 
-- [ ] Walk through every screen
 - [ ] Demo: register product → create invoice → print → show balance decreased
 - [ ] Demo: print an already-closed invoice → blocked
-- [ ] Demo: Stock service down → friendly error → recovery
-- [ ] Explain: Angular lifecycles used
-- [ ] Explain: RxJS operators used and why
-- [ ] Explain: other libraries + the visual component library
+- [ ] Demo: same `referencia` twice → debited once, identical body both times
+- [ ] Demo: two prints racing for the last unit → one 200, one 409, balance never negative
+- [ ] Demo: Stock service down → 503 with a readable message → restart → succeeds
 - [ ] Explain: backend framework choice (ASP.NET Core 9 + EF Core)
-- [ ] Explain: error/exception handling strategy
+- [ ] Explain: error/exception handling strategy and why every failure is ProblemDetails
 - [ ] Explain: where and how LINQ is used
+- [ ] Explain: why retry is safe here, and why it would not be without idempotency
+- [ ] Explain: the two test lanes, and what the InMemory one cannot prove
