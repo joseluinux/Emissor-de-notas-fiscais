@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Faturamento.Api.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace Faturamento.Api.Infrastructure;
 
@@ -27,7 +29,22 @@ public class EstoqueClient(HttpClient http, ILogger<EstoqueClient> logger) : IEs
             request.Referencia,
             request.Itens.Count);
 
-        var resposta = await http.PostAsJsonAsync(Rota, request, cancellationToken);
+        HttpResponseMessage resposta;
+        try
+        {
+            resposta = await http.PostAsJsonAsync(Rota, request, cancellationToken);
+        }
+        catch (Exception e) when (EhIndisponibilidade(e, cancellationToken))
+        {
+            // Falha de transporte, timeout ou circuito aberto: o Estoque nao respondeu. Vira 503
+            // com mensagem legivel em vez de 500, e a nota continua Aberta.
+            logger.LogWarning(
+                e,
+                "Estoque indisponivel. Referencia={Referencia}",
+                request.Referencia);
+
+            throw new EstoqueIndisponivelException(e);
+        }
 
         // 201 on the first debit, 200 when Estoque replays a debit already recorded under this same
         // reference. Both are success and return the same body, so neither is special-cased here.
@@ -59,6 +76,14 @@ public class EstoqueClient(HttpClient http, ILogger<EstoqueClient> logger) : IEs
         throw new EstoqueRespostaInvalidaException(
             $"O Estoque respondeu {(int)resposta.StatusCode} para {Rota}.");
     }
+
+    /// <summary>
+    /// Distingue "o Estoque nao respondeu" de "quem chamou desistiu". Um cancelamento pedido pelo
+    /// proprio chamador nao e indisponibilidade e nao deve virar 503.
+    /// </summary>
+    private static bool EhIndisponibilidade(Exception e, CancellationToken cancellationToken) =>
+        e is HttpRequestException or TimeoutRejectedException or BrokenCircuitException
+        || (e is TaskCanceledException && !cancellationToken.IsCancellationRequested);
 
     /// <summary>Pulls the ProblemDetails detail out of a refusal, falling back to a generic message.</summary>
     private static async Task<string> LerDetalheAsync(

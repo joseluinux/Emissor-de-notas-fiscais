@@ -255,4 +255,30 @@ public class NotasControllerTests
         // O estoque so foi chamado na primeira impressao.
         Assert.Equal(1, estoque.Chamadas);
     }
+
+    [Fact]
+    public async Task Estoque_indisponivel_deixa_a_nota_Aberta()
+    {
+        // Requisito obrigatorio 2. O Estoque fora do ar nao pode fechar a nota: nada foi debitado,
+        // entao fechar deixaria uma nota Fechada sem baixa nenhuma. Mantendo Aberta, o usuario
+        // reimprime quando o servico voltar.
+        await using var db = await ComNotasAsync(TestDb.Nota(1, StatusNotaFiscal.Aberta, ("P001", 2)));
+        var id = (await db.NotasFiscais.SingleAsync()).Id;
+        var estoque = new EstoqueFalso
+        {
+            Erro = new EstoqueIndisponivelException(new HttpRequestException("Connection refused")),
+        };
+        var controller = new NotasController(db, estoque);
+
+        var erro = await Assert.ThrowsAsync<EstoqueIndisponivelException>(
+            () => controller.Imprimir(id, default));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, erro.StatusCode);
+
+        // AsNoTracking ignora o rastreador e materializa do armazenamento, entao a assercao
+        // verifica o que ficou gravado e nao o objeto que o controller tocou.
+        var nota = await db.NotasFiscais.AsNoTracking().SingleAsync();
+        Assert.Equal(StatusNotaFiscal.Aberta, nota.Status);
+        Assert.Null(nota.ImpressaEm);
+    }
 }

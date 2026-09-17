@@ -16,7 +16,26 @@ var estoqueBaseUrl = builder.Configuration["Servicos:Estoque:BaseUrl"]
         "Configuracao 'Servicos:Estoque:BaseUrl' ausente. Veja appsettings.Development.json.");
 
 builder.Services.AddHttpClient<IEstoqueClient, EstoqueClient>(client =>
-    client.BaseAddress = new Uri(estoqueBaseUrl));
+        client.BaseAddress = new Uri(estoqueBaseUrl))
+    .AddStandardResilienceHandler(opcoes =>
+    {
+        // Sem isto, o Estoque fora do ar deixa a requisicao pendurada ate o timeout padrao de
+        // 100s do HttpClient. Dois segundos e o suficiente para um servico na mesma rede.
+        opcoes.AttemptTimeout.Timeout = TimeSpan.FromSeconds(2);
+
+        // Retry numa BAIXA DE ESTOQUE so e seguro porque a operacao e idempotente na referencia.
+        // Se a primeira tentativa chegou ao Estoque e a resposta se perdeu, a segunda encontra
+        // "nota-{id}" ja registrada e replica o resultado em vez de debitar de novo. Sem essa
+        // garantia, retry aqui seria debito duplo — e a politica correta seria nao ter retry.
+        opcoes.Retry.MaxRetryAttempts = 2;
+
+        // Depois de falhas seguidas o circuito abre e as chamadas passam a falhar na hora, em vez
+        // de cada usuario esperar o timeout. O Estoque tambem para de receber carga enquanto se
+        // recupera.
+        opcoes.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(10);
+
+        opcoes.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(10);
+    });
 
 // ProblemDetails plus the handler ahead of everything else, so no controller has to invent an
 // error body of its own.
