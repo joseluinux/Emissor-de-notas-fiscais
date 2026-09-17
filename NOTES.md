@@ -81,8 +81,8 @@ is insufficient, and when the same print is requested twice.
 | Frontend | **out of scope** — this repository is the backend | — |
 
 Local toolchain verified on this machine: `dotnet` SDK 9.0.120, Node 26.7.0, npm 12.0.2,
-Docker 29.7.2. `ng` and `psql` are **not** on PATH — use `npx ng` and run Postgres in a
-container.
+Docker 29.7.2. `psql` is **not** on PATH — use `docker exec emissor-db psql`, and run
+Postgres in a container.
 
 ## Repository layout
 
@@ -163,9 +163,11 @@ Known weakness in the test suite — half fixed:
       circuit breaker. With Estoque down, printing answers **503 in ~10s with a readable
       message** instead of 500 in 100s with a stack trace, and the invoice stays Aberta
 
+- [x] **`docker-compose.yml`** for PostgreSQL, with a healthcheck and an init script that
+      creates both databases — one command replaces three
+
 Still missing:
 
-- [ ] No `docker-compose.yml` for PostgreSQL (decided against for now)
 - [ ] Stretch goal (b), AI, not attempted — out of scope by decision
 
 ## Design
@@ -281,10 +283,10 @@ executed in memory.
 ## Local development
 
 ```bash
-# PostgreSQL — runs as the container `emissor-db`, on host port 5433.
-docker run -d --name emissor-db -p 5433:5432 -e POSTGRES_PASSWORD=postgres postgres:16
-docker exec emissor-db psql -U postgres -c 'create database estoque;'
-docker exec emissor-db psql -U postgres -c 'create database faturamento;'
+# PostgreSQL — container `emissor-db` on host port 5433, both databases created by the
+# init script in docker/initdb/. `--wait` blocks until the healthcheck passes, so the
+# migrations below never race a database that is still starting.
+docker compose up -d --wait
 
 # Backend — two terminals
 dotnet run --project backend/Estoque.Api        # http://localhost:5001  /swagger
@@ -306,7 +308,15 @@ if that ever stops being true. `bin/` and `obj/` are **not** tracked.
 ## Open decisions
 
 1. Whether to attempt the AI stretch goal, and with what provider.
-2. Whether services get a `docker-compose.yml` (nice for the demo) or stay `dotnet run`.
+
+### Decided: compose covers PostgreSQL only
+
+The services themselves are **not** containerised, and that is a decision rather than an
+omission. Doing it would mean two multi-stage Dockerfiles, moving `Servicos:Estoque:BaseUrl`
+to an environment variable so Faturamento resolves Estoque by compose service name instead of
+`localhost`, and running migrations on startup — which is a design choice with real downsides
+in production. The payoff over `dotnet run` is small, and Testcontainers already exercises
+Docker where it matters: the tests.
 
 ## Demo walkthrough checklist
 

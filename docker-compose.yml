@@ -1,0 +1,28 @@
+# Sobe apenas o PostgreSQL. Os dois servicos continuam rodando com `dotnet run` — ver NOTES.md
+# para o porque de nao containerizar a aplicacao.
+services:
+  db:
+    image: postgres:16
+    container_name: emissor-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      # 5433 no host de proposito: evita colidir com um PostgreSQL ja instalado na maquina,
+      # e e a porta que as connection strings de Development esperam.
+      - "5433:5432"
+    volumes:
+      - emissor-db-data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # `docker compose up --wait` so retorna quando este teste passa, entao as migrations
+      # nunca correm contra um banco que ainda esta subindo.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  emissor-db-data:

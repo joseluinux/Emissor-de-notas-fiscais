@@ -47,7 +47,7 @@ docker exec emissor-db psql -U postgres -d estoque \
 
 Table names are EF-default PascalCase, so `psql` queries need double quotes.
 
-`ng` and `psql` are not on PATH — use `npx ng` and `docker exec emissor-db psql`.
+`psql` is not on PATH — use `docker exec emissor-db psql`.
 
 ## Conventions
 

@@ -65,10 +65,8 @@ dotnet test Emissor.sln
 ## Como rodar
 
 ```bash
-# PostgreSQL
-docker run -d --name emissor-db -p 5433:5432 -e POSTGRES_PASSWORD=postgres postgres:16
-docker exec emissor-db psql -U postgres -c 'create database estoque;'
-docker exec emissor-db psql -U postgres -c 'create database faturamento;'
+# PostgreSQL — cria os dois bancos e espera ficar saudavel
+docker compose up -d --wait
 
 # Migrations
 dotnet ef database update --project backend/Estoque.Api
