@@ -137,6 +137,7 @@ public class DominioExceptionHandlerTests
         Assert.IsAssignableFrom<DominioException>(new NotaNaoAbertaException(TestDb.Nota(1)));
         Assert.IsAssignableFrom<DominioException>(new EstoqueRecusouException(409, "x"));
         Assert.IsAssignableFrom<DominioException>(new NotaNaoEncontradaException(999));
+        Assert.IsAssignableFrom<DominioException>(new EstoqueIndisponivelException(new HttpRequestException()));
     }
 
     [Fact]
@@ -152,6 +153,26 @@ public class DominioExceptionHandlerTests
         Assert.Equal(StatusCodes.Status404NotFound, contexto.Response.StatusCode);
         Assert.Equal(StatusCodes.Status404NotFound, spy.Escrito!.Status);
         Assert.Contains("999", spy.Escrito.Detail);
+        Assert.True(spy.Escrito.Extensions.ContainsKey("correlationId"));
+    }
+
+    [Fact]
+    public async Task EstoqueIndisponivel_vira_503_com_mensagem_para_o_usuario()
+    {
+        var (handler, spy) = Montar();
+        var contexto = new DefaultHttpContext();
+
+        await handler.TryHandleAsync(
+            contexto,
+            new EstoqueIndisponivelException(new HttpRequestException("Connection refused")),
+            default);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, contexto.Response.StatusCode);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, spy.Escrito!.Status);
+
+        // O usuario precisa saber o que fazer, nao ler um stack trace.
+        Assert.Contains("indisponivel", spy.Escrito.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Aberta", spy.Escrito.Detail!);
         Assert.True(spy.Escrito.Extensions.ContainsKey("correlationId"));
     }
 }

@@ -50,6 +50,24 @@ public class EstoqueClientTests
         return (new EstoqueClient(http, NullLogger<EstoqueClient>.Instance), handler);
     }
 
+    /// <summary>Handler que nunca responde: simula o Estoque fora do ar ou a rede caindo.</summary>
+    private sealed class FalhaDeTransporte(Exception erro) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => Task.FromException<HttpResponseMessage>(erro);
+    }
+
+    private static EstoqueClient MontarComFalha(Exception erro)
+    {
+        var http = new HttpClient(new FalhaDeTransporte(erro))
+        {
+            BaseAddress = new Uri("http://estoque.local"),
+        };
+
+        return new EstoqueClient(http, NullLogger<EstoqueClient>.Instance);
+    }
+
     private static RegistrarMovimentacaoRequest Baixa() =>
         new("nota-1", [new MovimentacaoItemRequest("P001", 2)]);
 
@@ -172,5 +190,47 @@ public class EstoqueClientTests
     {
         // Se herdasse de DominioException viraria 4xx e esconderia um contrato quebrado.
         Assert.IsNotAssignableFrom<DominioException>(new EstoqueRespostaInvalidaException("x"));
+    }
+
+    [Fact]
+    public async Task Estoque_fora_do_ar_vira_EstoqueIndisponivel()
+    {
+        // Requisito obrigatorio 2: indisponibilidade tem que virar uma resposta util, nao um 500.
+        var causa = new HttpRequestException("Connection refused");
+        var cliente = MontarComFalha(causa);
+
+        var erro = await Assert.ThrowsAsync<EstoqueIndisponivelException>(
+            () => cliente.RegistrarBaixaAsync(Baixa(), default));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, erro.StatusCode);
+        Assert.Contains("indisponivel", erro.Message, StringComparison.OrdinalIgnoreCase);
+
+        // A causa vai junto para o log dizer se foi recusa de conexao, timeout ou circuito aberto.
+        Assert.Same(causa, erro.InnerException);
+    }
+
+    [Fact]
+    public async Task Timeout_tambem_vira_EstoqueIndisponivel()
+    {
+        // TaskCanceledException sem cancelamento do chamador e timeout, nao desistencia.
+        var cliente = MontarComFalha(new TaskCanceledException("The request timed out."));
+
+        var erro = await Assert.ThrowsAsync<EstoqueIndisponivelException>(
+            () => cliente.RegistrarBaixaAsync(Baixa(), default));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, erro.StatusCode);
+    }
+
+    [Fact]
+    public async Task Cancelamento_do_chamador_nao_e_indisponibilidade()
+    {
+        // Quem desistiu foi quem chamou. Transformar isso em 503 culparia o Estoque por um
+        // problema que nao e dele, e mascararia cancelamento legitimo.
+        var cliente = MontarComFalha(new TaskCanceledException("Cancelled by caller."));
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(
+            () => cliente.RegistrarBaixaAsync(Baixa(), cts.Token));
     }
 }
